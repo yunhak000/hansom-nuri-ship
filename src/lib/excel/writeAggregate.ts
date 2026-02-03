@@ -10,6 +10,10 @@ export type TAggregateRow = {
   kg: number | null;
 };
 
+const normalizeItemNameForAggregate = (itemName: string) => {
+  return itemName.replace(/(\b)5(\s*kg\b)/gi, "$14.5$2").replace(/(\b)10(\s*kg\b)/gi, "$19$2");
+};
+
 export const buildAggregateRows = (originalRows: Array<Record<string, any>>): TAggregateRow[] => {
   const map = new Map<string, number>();
 
@@ -23,11 +27,22 @@ export const buildAggregateRows = (originalRows: Array<Record<string, any>>): TA
     map.set(itemName, (map.get(itemName) ?? 0) + (Number.isFinite(box) ? box : 0));
   }
 
-  const result: TAggregateRow[] = Array.from(map.entries()).map(([itemName, totalBox]) => ({
-    itemName,
-    totalBox,
-    kg: extractKg(itemName),
-  }));
+  const normalizeKgForAggregate = (kg: number | null): number | null => {
+    if (kg === null) return null;
+    if (kg === 5) return 4.5;
+    if (kg === 10) return 9;
+    return kg;
+  };
+
+  const result: TAggregateRow[] = Array.from(map.entries()).map(([itemName, totalBox]) => {
+    const rawKg = extractKg(itemName);
+
+    return {
+      itemName,
+      totalBox,
+      kg: normalizeKgForAggregate(rawKg),
+    };
+  });
 
   result.sort(sortByKgThenName);
   return result;
