@@ -59,7 +59,7 @@ export const downloadAggregateExcel = async (aggregateRows: TAggregateRow[]) => 
 
   aggregateRows.forEach((row) => {
     worksheet.addRow({
-      itemName: row.itemName,
+      itemName: normalizeItemNameForAggregate(row.itemName),
       totalBox: row.totalBox,
     });
   });
