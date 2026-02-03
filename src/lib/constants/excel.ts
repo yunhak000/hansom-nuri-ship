@@ -13,12 +13,12 @@ export const CJ_UPLOAD_HEADERS = [
   "배송메세지",
   "거래처주문번호",
   "운송장번호",
-  "어드민플러스주문번호",
+  "상품주문번호",
 ] as const;
 
 export type TCjUploadHeader = (typeof CJ_UPLOAD_HEADERS)[number];
 
-export const ORIGINAL_KEY_COL = "어드민플러스주문번호";
+export const ORIGINAL_KEY_COL = "상품주문번호";
 export const ORIGINAL_ITEM_COL = "품목명";
 export const ORIGINAL_BOX_COL = "박스수량";
 export const ORIGINAL_TRACKING_COL = "운송장번호";

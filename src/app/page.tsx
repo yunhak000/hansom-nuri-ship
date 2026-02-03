@@ -360,7 +360,7 @@ export default function HomePage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-white">
                   <tr>
-                    <th className="border-b p-2 text-left">어드민플러스주문번호</th>
+                    <th className="border-b p-2 text-left">상품주문번호</th>
                     <th className="border-b p-2 text-left">중복 개수</th>
                   </tr>
                 </thead>
