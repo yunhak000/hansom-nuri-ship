@@ -12,65 +12,59 @@ export type TApplyResult = {
   duplicates: Array<{ key: string; count: number }>;
 };
 
-export const applyTracking = (
-  originalHeaders: string[],
-  originalRows: TRow[],
-  replyMap: Map<string, string>, // 고객주문번호 -> 운송장번호
-): TApplyResult => {
-  // header map
-  const headerMap = new Map<string, string>();
-  for (const h of originalHeaders) headerMap.set(normalizeHeader(h), h);
+export const applyTracking = (originalHeaders: string[], originalRows: Array<Record<string, any>>, replyMap: Map<string, string[]>) => {
+  const updatedHeaders = [...originalHeaders];
 
-  const keyHeader = headerMap.get(normalizeHeader(ORIGINAL_KEY_COL)) ?? ORIGINAL_KEY_COL;
-  const trackingHeader = headerMap.get(normalizeHeader(ORIGINAL_TRACKING_COL)) ?? ORIGINAL_TRACKING_COL;
+  const extraColNames = (n: number) => `운송장번호(${n})`; // 2부터 사용
 
-  // duplicate keys in original
-  const counts = new Map<string, number>();
-  for (const r of originalRows) {
-    const k = String(r[keyHeader] ?? "").trim();
-    if (!k) continue;
-    counts.set(k, (counts.get(k) ?? 0) + 1);
+  let maxTrackingCount = 1; // 최소 1(기존 운송장번호)
+
+  // 1) replyMap 전체에서 최대 운송장 개수 구하기
+  for (const list of replyMap.values()) {
+    if (list.length > maxTrackingCount) maxTrackingCount = list.length;
   }
-  const duplicates = Array.from(counts.entries())
-    .filter(([, c]) => c > 1)
-    .map(([key, count]) => ({ key, count }));
 
-  // apply
-  const updated = originalRows.map((r) => ({ ...r }));
+  // 2) 필요한 추가 컬럼을 헤더에 미리 붙이기 (2..max)
+  for (let i = 2; i <= maxTrackingCount; i++) {
+    const col = extraColNames(i);
+    if (!updatedHeaders.includes(col)) updatedHeaders.push(col);
+  }
+
+  // 3) 매핑 적용
   const unmatched: Array<{ customerOrderNo: string; tracking: string }> = [];
+  const duplicates: Array<{ key: string; count: number }> = []; // 너 기존 로직 그대로 두면 됨
 
-  // index for fast lookup: key -> list of row indexes
-  const index = new Map<string, number[]>();
-  updated.forEach((r, i) => {
-    const k = String(r[keyHeader] ?? "").trim();
-    if (!k) return;
-    const arr = index.get(k) ?? [];
-    arr.push(i);
-    index.set(k, arr);
+  // 원본 중복키 계산 로직(기존 그대로)...
+
+  const updatedRows = originalRows.map((row) => {
+    const key = String(row["상품주문번호"] ?? "").trim(); // ✅ 원본 키
+    if (!key) return row;
+
+    const list = replyMap.get(key); // ✅ CJ 고객주문번호 == 상품주문번호 값
+    if (!list || list.length === 0) return row;
+
+    // 1번째는 기존 운송장번호 컬럼
+    row["운송장번호"] = list[0];
+
+    // 2번째부터는 추가 컬럼
+    for (let i = 2; i <= list.length; i++) {
+      row[extraColNames(i)] = list[i - 1];
+    }
+
+    return row;
   });
 
-  for (const [customerOrderNo, tracking] of replyMap.entries()) {
-    const idxs = index.get(customerOrderNo);
-    if (!idxs || idxs.length === 0) {
-      unmatched.push({ customerOrderNo, tracking });
-      continue;
-    }
-    for (const idx of idxs) {
-      updated[idx][trackingHeader] = tracking;
-    }
-  }
-
-  // tracking 컬럼이 원본에 없을 수도 있으니, 헤더에 없으면 추가
-  const finalHeaders = [...originalHeaders];
-  if (!finalHeaders.some((h) => normalizeHeader(h) === normalizeHeader(trackingHeader))) {
-    finalHeaders.push(trackingHeader);
-    // 새 컬럼을 추가한 경우, 빈 값 보장
-    for (const r of updated) {
-      if (!(trackingHeader in r)) r[trackingHeader] = "";
+  // unmatched 만드는 로직은 기존이 Map<string,string> 기준일텐데
+  // 이제 Map<string,string[]>니까 아래처럼 바꾸면 됨:
+  for (const [customerOrderNo, list] of replyMap.entries()) {
+    const existsInOriginal = originalRows.some((r) => String(r["상품주문번호"] ?? "").trim() === customerOrderNo);
+    if (!existsInOriginal) {
+      // 운송장 여러 개면 각각 기록 (원하면 1개만 기록도 가능)
+      for (const tracking of list) unmatched.push({ customerOrderNo, tracking });
     }
   }
 
-  return { updatedRows: updated, unmatched, duplicates };
+  return { updatedHeaders, updatedRows, unmatched, duplicates };
 };
 
 export const downloadOriginalWithTracking = async (headers: string[], rows: TRow[]) => {

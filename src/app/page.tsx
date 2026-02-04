@@ -135,14 +135,33 @@ export default function HomePage() {
       }
 
       setBusy(true, "CJ 회신 파일 읽는 중...");
-      const { map } = await readCjReplyFiles(accepted);
+      const { map, orderFileMap } = await readCjReplyFiles(accepted);
+
+      // ❗ 서로 다른 파일 간 고객주문번호 중복 검사
+      const duplicatedOrders = Array.from(orderFileMap.entries())
+        .filter(([, fileSet]) => fileSet.size >= 2)
+        .map(([orderNo, fileSet]) => ({
+          orderNo,
+          files: Array.from(fileSet),
+        }));
+
+      if (duplicatedOrders.length > 0) {
+        const lines = duplicatedOrders
+          .slice(0, 20)
+          .map((d) => `- ${d.orderNo} : ${d.files.join(", ")}`)
+          .join("\n");
+
+        setError(`CJ 회신 업로드 실패: 서로 다른 회신 파일에 같은 고객주문번호가 있습니다.\n` + `해당 파일들을 CJ에 재확인 후 다시 업로드해주세요.\n\n` + lines);
+        return; // ✅ 이번 업로드 전체 중단(저장/매핑/step이동 없음)
+      }
 
       setBusy(true, "운송장번호 매핑 중...");
-      const { updatedRows, unmatched, duplicates } = applyTracking(job.originalHeaders, job.originalRows, map);
 
-      // job 저장 업데이트
+      const { updatedHeaders, updatedRows, unmatched, duplicates } = applyTracking(job.originalHeaders, job.originalRows, map);
+
       const next: TJobState = {
         ...job,
+        originalHeaders: updatedHeaders, // ✅ 추가
         originalRows: updatedRows,
         uploadedReplyFiles: [...existing, ...newFingerprints],
       };
@@ -220,7 +239,7 @@ export default function HomePage() {
       </div>
 
       {/* Error */}
-      {error && <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {error && <div className="whitespace-pre-line rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
       {/* Loading Overlay */}
       {loading.on && (

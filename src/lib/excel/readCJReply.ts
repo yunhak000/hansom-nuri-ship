@@ -1,83 +1,64 @@
 import ExcelJS from "exceljs";
-import { CJ_REPLY_KEY_COL, CJ_REPLY_TRACKING_COL } from "@/lib/constants/excel";
-import { normalizeHeader, toText } from "@/lib/utils/normalize";
 
-export type TReplyRecord = {
-  key: string; // 고객주문번호
-  tracking: string; // 운송장번호
-  sourceFileName: string;
+export type TReadCjReplyResult = {
+  map: Map<string, string>;
+  orderFileMap: Map<string, Set<string>>;
 };
 
-export type TReadReplyResult = {
-  records: TReplyRecord[];
-  skipped: Array<{ reason: string; sourceFileName: string }>;
+const normalize = (v: unknown) => String(v ?? "").trim();
+
+const normalizeHeader = (v: unknown) => normalize(v).replace(/\s/g, "");
+
+const findHeaderCol = (headers: unknown[], target: string) => {
+  const t = normalizeHeader(target);
+  const exact = headers.findIndex((h) => normalizeHeader(h) === t);
+  if (exact !== -1) return exact;
+
+  const partial = headers.findIndex((h) => normalizeHeader(h).includes(t));
+  return partial !== -1 ? partial : -1;
 };
 
-export const readCjReplyFile = async (file: File): Promise<TReadReplyResult> => {
-  const buffer = await file.arrayBuffer();
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
-
-  const ws = wb.worksheets[0];
-  if (!ws) throw new Error(`회신 파일 시트를 찾을 수 없습니다: ${file.name}`);
-
-  // 헤더 찾기
-  const headers: string[] = [];
-  ws.getRow(1).eachCell((cell, colNumber) => {
-    headers[colNumber - 1] = String(cell.value ?? "").trim();
-  });
-
-  const headerMap = new Map<string, number>(); // normalized header -> col index (1-based)
-  headers.forEach((h, idx) => headerMap.set(normalizeHeader(h), idx + 1));
-
-  const keyCol = headerMap.get(normalizeHeader(CJ_REPLY_KEY_COL));
-  const trackingCol = headerMap.get(normalizeHeader(CJ_REPLY_TRACKING_COL));
-
-  if (!keyCol || !trackingCol) {
-    return {
-      records: [],
-      skipped: [{ reason: "필수 컬럼(고객주문번호/운송장번호)을 찾지 못함", sourceFileName: file.name }],
-    };
-  }
-
-  const records: TReplyRecord[] = [];
-  const skipped: Array<{ reason: string; sourceFileName: string }> = [];
-
-  ws.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
-
-    const key = toText(row.getCell(keyCol).value).trim();
-    const tracking = toText(row.getCell(trackingCol).value).trim();
-
-    if (!key) {
-      skipped.push({ reason: "고객주문번호 비어있음", sourceFileName: file.name });
-      return;
-    }
-    if (!tracking) {
-      // 너가 "항상 채워져 있다" 했지만, 방어로직은 유지
-      skipped.push({ reason: `운송장번호 비어있음 (고객주문번호=${key})`, sourceFileName: file.name });
-      return;
-    }
-
-    records.push({ key, tracking, sourceFileName: file.name });
-  });
-
-  return { records, skipped };
-};
-
-export const readCjReplyFiles = async (files: File[]) => {
-  const all: TReplyRecord[] = [];
-  const skipped: Array<{ reason: string; sourceFileName: string }> = [];
-
-  for (const f of files) {
-    const r = await readCjReplyFile(f);
-    all.push(...r.records);
-    skipped.push(...r.skipped);
-  }
-
-  // key -> tracking (동일 key 여러 번이면 마지막 값을 채택)
+export const readCjReplyFiles = async (files: File[]): Promise<TReadCjReplyResult> => {
   const map = new Map<string, string>();
-  for (const rec of all) map.set(rec.key, rec.tracking);
+  const orderFileMap = new Map<string, Set<string>>();
 
-  return { map, records: all, skipped };
+  for (const file of files) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const sheet = workbook.worksheets[0];
+    if (!sheet) continue;
+
+    // 1행을 헤더로
+    const headerRow = sheet.getRow(1);
+    const headers = headerRow.values as unknown[]; // 1-based
+
+    const orderCol = findHeaderCol(headers, "고객주문번호");
+    const trackingCol = findHeaderCol(headers, "운송장번호");
+
+    const fileOrderSet = new Set<string>();
+
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+
+      const orderNo = normalize(row.getCell(orderCol).value); // 고객주문번호
+      const tracking = normalize(row.getCell(trackingCol).value); // 운송장번호
+      if (!orderNo || !tracking) return;
+
+      // ✅ 덮어쓰기 대신 배열에 누적
+      const list = map.get(orderNo) ?? [];
+      list.push(tracking);
+      map.set(orderNo, list);
+
+      fileOrderSet.add(orderNo);
+    });
+
+    // 파일 간 중복 검사용
+    for (const orderNo of fileOrderSet) {
+      const set = orderFileMap.get(orderNo) ?? new Set<string>();
+      set.add(file.name);
+      orderFileMap.set(orderNo, set);
+    }
+  }
+
+  return { map, orderFileMap };
 };
