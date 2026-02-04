@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 
 export type TReadCjReplyResult = {
-  map: Map<string, string>;
+  map: any;
   orderFileMap: Map<string, Set<string>>;
 };
 
@@ -45,7 +45,7 @@ export const readCjReplyFiles = async (files: File[]): Promise<TReadCjReplyResul
       if (!orderNo || !tracking) return;
 
       // ✅ 덮어쓰기 대신 배열에 누적
-      const list = map.get(orderNo) ?? [];
+      const list = map.get(orderNo) ?? ([] as any);
       list.push(tracking);
       map.set(orderNo, list);
 

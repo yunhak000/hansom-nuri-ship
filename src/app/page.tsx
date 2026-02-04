@@ -9,8 +9,6 @@ import { applyTracking, downloadOriginalWithTracking, downloadUnmatchedExcel } f
 import { clearJob, loadJob, saveJob, type TJobState } from "@/lib/db";
 import { fingerprintFile, isSameFingerprint, type TFileFingerprint } from "@/lib/utils/hash";
 
-type TRow = Record<string, any>;
-
 type TStep = 1 | 2 | 3 | 4;
 
 export default function HomePage() {
