@@ -2,12 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { readExcelFile } from "@/lib/excel/read";
-import { buildAggregateRows, downloadAggregateExcel, type TAggregateRow } from "@/lib/excel/writeAggregate";
-import { buildCjGroupedRows, downloadCjUploadsZip } from "@/lib/excel/writeCJUploads";
+import {
+  buildAggregateRows,
+  downloadAggregateExcel,
+  type TAggregateRow,
+} from "@/lib/excel/writeAggregate";
+import {
+  buildCjGroupedRows,
+  downloadCjUploadsZip,
+} from "@/lib/excel/writeCJUploads";
 import { readCjReplyFiles } from "@/lib/excel/readCJReply";
-import { applyTracking, downloadOriginalWithTracking, downloadUnmatchedExcel } from "@/lib/excel/applyTrackingToOriginal";
+import {
+  applyTracking,
+  downloadOriginalWithTracking,
+  downloadUnmatchedExcel,
+} from "@/lib/excel/applyTrackingToOriginal";
 import { clearJob, loadJob, saveJob, type TJobState } from "@/lib/db";
-import { fingerprintFile, isSameFingerprint, type TFileFingerprint } from "@/lib/utils/hash";
+import {
+  fingerprintFile,
+  isSameFingerprint,
+  type TFileFingerprint,
+} from "@/lib/utils/hash";
 
 type TRow = Record<string, any>;
 
@@ -15,7 +30,10 @@ type TStep = 1 | 2 | 3 | 4;
 
 export default function HomePage() {
   const [step, setStep] = useState<TStep>(1);
-  const [loading, setLoading] = useState<{ on: boolean; text: string }>({ on: false, text: "" });
+  const [loading, setLoading] = useState<{ on: boolean; text: string }>({
+    on: false,
+    text: "",
+  });
   const [error, setError] = useState<string>("");
 
   // persisted job
@@ -116,7 +134,9 @@ export default function HomePage() {
 
       Array.from(files).forEach((f) => {
         const fp = fingerprintFile(f);
-        const isDup = existing.some((x) => isSameFingerprint(x, fp)) || newFingerprints.some((x) => isSameFingerprint(x, fp));
+        const isDup =
+          existing.some((x) => isSameFingerprint(x, fp)) ||
+          newFingerprints.some((x) => isSameFingerprint(x, fp));
         if (isDup) {
           dupNames.push(f.name);
           return;
@@ -131,14 +151,41 @@ export default function HomePage() {
       }
       if (dupNames.length > 0) {
         // 경고는 error 말고 안내로 하고 싶으면 toast로 바꾸면 됨 (지금은 간단히 error에 표시)
-        setError(`일부 회신 파일은 이미 업로드되어 제외했습니다: ${dupNames.join(", ")}`);
+        setError(
+          `일부 회신 파일은 이미 업로드되어 제외했습니다: ${dupNames.join(", ")}`,
+        );
       }
 
       setBusy(true, "CJ 회신 파일 읽는 중...");
-      const { map } = await readCjReplyFiles(accepted);
+      const { map, orderFileMap } = await readCjReplyFiles(accepted);
+
+      // ❗ 파일 간 고객주문번호 중복 검사
+      const duplicatedOrders = Array.from(orderFileMap.entries())
+        .filter(([, fileSet]) => fileSet.size >= 2)
+        .map(([orderNo, fileSet]) => ({
+          orderNo,
+          files: Array.from(fileSet),
+        }));
+
+      if (duplicatedOrders.length > 0) {
+        const messageLines = duplicatedOrders
+          .slice(0, 5)
+          .map((d) => `- ${d.orderNo} : ${d.files.join(", ")}`);
+
+        setError(
+          `CJ 회신 파일 오류: 서로 다른 파일에 같은 고객주문번호가 있습니다.\n\n` +
+            messageLines.join("\n"),
+        );
+
+        return; // 🚫 여기서 전체 업로드 중단
+      }
 
       setBusy(true, "운송장번호 매핑 중...");
-      const { updatedRows, unmatched, duplicates } = applyTracking(job.originalHeaders, job.originalRows, map);
+      const { updatedRows, unmatched, duplicates } = applyTracking(
+        job.originalHeaders,
+        job.originalRows,
+        map,
+      );
 
       // job 저장 업데이트
       const next: TJobState = {
@@ -202,7 +249,10 @@ export default function HomePage() {
     <main className="mx-auto max-w-4xl p-6 space-y-6">
       <header className="space-y-2">
         <h1 className="text-2xl font-bold">한섬누리 출고 엑셀 도구</h1>
-        <p className="text-sm text-gray-600">원본 업로드 → 품목 집계/ CJ 업로드 파일 생성 → 회신 업로드 → 운송장 반영</p>
+        <p className="text-sm text-gray-600">
+          원본 업로드 → 품목 집계/ CJ 업로드 파일 생성 → 회신 업로드 → 운송장
+          반영
+        </p>
       </header>
 
       {/* Stepper */}
@@ -213,14 +263,21 @@ export default function HomePage() {
           { n: 3, label: "회신 업로드" },
           { n: 4, label: "최종 다운로드" },
         ].map((s) => (
-          <div key={s.n} className={`flex-1 rounded-lg border p-3 text-center ${step === s.n ? "border-black font-semibold" : "border-gray-200"}`}>
+          <div
+            key={s.n}
+            className={`flex-1 rounded-lg border p-3 text-center ${step === s.n ? "border-black font-semibold" : "border-gray-200"}`}
+          >
             {s.n}. {s.label}
           </div>
         ))}
       </div>
 
       {/* Error */}
-      {error && <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Loading Overlay */}
       {loading.on && (
@@ -235,10 +292,16 @@ export default function HomePage() {
       {/* Step 1 */}
       <section className="rounded-2xl border p-5 space-y-3">
         <h2 className="text-lg font-semibold">1) 원본 엑셀 업로드</h2>
-        <input type="file" accept=".xlsx" disabled={loading.on} onChange={(e) => onUploadOriginal(e.target.files?.[0] ?? null)} />
+        <input
+          type="file"
+          accept=".xlsx"
+          disabled={loading.on}
+          onChange={(e) => onUploadOriginal(e.target.files?.[0] ?? null)}
+        />
         {job?.originalFileName && (
           <div className="text-sm text-gray-700">
-            현재 작업 원본: <span className="font-medium">{job.originalFileName}</span>
+            현재 작업 원본:{" "}
+            <span className="font-medium">{job.originalFileName}</span>
           </div>
         )}
 
@@ -287,8 +350,17 @@ export default function HomePage() {
       {/* Step 3 */}
       <section className="rounded-2xl border p-5 space-y-3">
         <h2 className="text-lg font-semibold">3) CJ 회신 엑셀 업로드(다중)</h2>
-        <input type="file" accept=".xlsx" multiple disabled={!canStep3 || loading.on} onChange={(e) => onUploadReplies(e.target.files)} title={!canStep3 ? "원본을 먼저 업로드하세요" : ""} />
-        <p className="text-sm text-gray-600">같은 파일을 다시 올리면 경고 후 제외됩니다.</p>
+        <input
+          type="file"
+          accept=".xlsx"
+          multiple
+          disabled={!canStep3 || loading.on}
+          onChange={(e) => onUploadReplies(e.target.files)}
+          title={!canStep3 ? "원본을 먼저 업로드하세요" : ""}
+        />
+        <p className="text-sm text-gray-600">
+          같은 파일을 다시 올리면 경고 후 제외됩니다.
+        </p>
       </section>
 
       {/* Step 4 */}
@@ -298,32 +370,54 @@ export default function HomePage() {
         {localResult ? (
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg border p-3">
-              회신 키 수: <span className="font-semibold">{localResult.totalReplyCount}</span>
+              회신 키 수:{" "}
+              <span className="font-semibold">
+                {localResult.totalReplyCount}
+              </span>
             </div>
             <div className="rounded-lg border p-3">
-              매핑 성공(추정): <span className="font-semibold">{localResult.matchedCount}</span>
+              매핑 성공(추정):{" "}
+              <span className="font-semibold">{localResult.matchedCount}</span>
             </div>
             <div className="rounded-lg border p-3">
-              미매칭: <span className="font-semibold">{localResult.unmatched.length}</span>
+              미매칭:{" "}
+              <span className="font-semibold">
+                {localResult.unmatched.length}
+              </span>
             </div>
             <div className="rounded-lg border p-3">
-              원본 중복키: <span className="font-semibold">{localResult.duplicates.length}</span>
+              원본 중복키:{" "}
+              <span className="font-semibold">
+                {localResult.duplicates.length}
+              </span>
             </div>
           </div>
         ) : (
-          <div className="text-sm text-gray-600">회신 업로드 후 결과가 표시됩니다.</div>
+          <div className="text-sm text-gray-600">
+            회신 업로드 후 결과가 표시됩니다.
+          </div>
         )}
 
         <div className="flex flex-wrap gap-2">
-          <button className="rounded-lg bg-black px-4 py-2 text-sm text-white disabled:opacity-40" disabled={!job || loading.on} onClick={onDownloadFinal}>
+          <button
+            className="rounded-lg bg-black px-4 py-2 text-sm text-white disabled:opacity-40"
+            disabled={!job || loading.on}
+            onClick={onDownloadFinal}
+          >
             최종 원본 다운로드
           </button>
 
           <button
             className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-white disabled:opacity-40"
-            disabled={!localResult || localResult.unmatched.length === 0 || loading.on}
+            disabled={
+              !localResult || localResult.unmatched.length === 0 || loading.on
+            }
             onClick={onDownloadUnmatched}
-            title={!localResult || localResult.unmatched.length === 0 ? "미매칭이 없습니다" : ""}
+            title={
+              !localResult || localResult.unmatched.length === 0
+                ? "미매칭이 없습니다"
+                : ""
+            }
           >
             미매칭 목록 다운로드
           </button>
@@ -331,7 +425,9 @@ export default function HomePage() {
 
         {localResult?.unmatched?.length ? (
           <div className="space-y-2">
-            <div className="text-sm font-semibold">미매칭 리스트(상위 20개)</div>
+            <div className="text-sm font-semibold">
+              미매칭 리스트(상위 20개)
+            </div>
             <div className="max-h-56 overflow-auto rounded-lg border">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-white">

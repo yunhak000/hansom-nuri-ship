@@ -13,7 +13,9 @@ export type TReadReplyResult = {
   skipped: Array<{ reason: string; sourceFileName: string }>;
 };
 
-export const readCjReplyFile = async (file: File): Promise<TReadReplyResult> => {
+export const readCjReplyFile = async (
+  file: File,
+): Promise<TReadReplyResult> => {
   const buffer = await file.arrayBuffer();
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
@@ -36,7 +38,12 @@ export const readCjReplyFile = async (file: File): Promise<TReadReplyResult> => 
   if (!keyCol || !trackingCol) {
     return {
       records: [],
-      skipped: [{ reason: "필수 컬럼(고객주문번호/운송장번호)을 찾지 못함", sourceFileName: file.name }],
+      skipped: [
+        {
+          reason: "필수 컬럼(고객주문번호/운송장번호)을 찾지 못함",
+          sourceFileName: file.name,
+        },
+      ],
     };
   }
 
@@ -50,12 +57,18 @@ export const readCjReplyFile = async (file: File): Promise<TReadReplyResult> => 
     const tracking = toText(row.getCell(trackingCol).value).trim();
 
     if (!key) {
-      skipped.push({ reason: "고객주문번호 비어있음", sourceFileName: file.name });
+      skipped.push({
+        reason: "고객주문번호 비어있음",
+        sourceFileName: file.name,
+      });
       return;
     }
     if (!tracking) {
       // 너가 "항상 채워져 있다" 했지만, 방어로직은 유지
-      skipped.push({ reason: `운송장번호 비어있음 (고객주문번호=${key})`, sourceFileName: file.name });
+      skipped.push({
+        reason: `운송장번호 비어있음 (고객주문번호=${key})`,
+        sourceFileName: file.name,
+      });
       return;
     }
 
@@ -66,18 +79,31 @@ export const readCjReplyFile = async (file: File): Promise<TReadReplyResult> => 
 };
 
 export const readCjReplyFiles = async (files: File[]) => {
-  const all: TReplyRecord[] = [];
-  const skipped: Array<{ reason: string; sourceFileName: string }> = [];
+  const map = new Map<string, string>();
+  const orderFileMap = new Map<string, Set<string>>();
 
-  for (const f of files) {
-    const r = await readCjReplyFile(f);
-    all.push(...r.records);
-    skipped.push(...r.skipped);
+  for (const file of files) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const sheet = workbook.worksheets[0];
+
+    sheet.eachRow((row, rowIdx) => {
+      if (rowIdx === 1) return;
+
+      const orderNo = String(row.getCell("고객주문번호").value ?? "").trim();
+      const tracking = String(row.getCell("운송장번호").value ?? "").trim();
+      if (!orderNo || !tracking) return;
+
+      // ✅ 운송장 매핑 (기존 로직)
+      map.set(orderNo, tracking);
+
+      // ✅ 파일별 주문번호 추적
+      if (!orderFileMap.has(orderNo)) {
+        orderFileMap.set(orderNo, new Set());
+      }
+      orderFileMap.get(orderNo)!.add(file.name);
+    });
   }
 
-  // key -> tracking (동일 key 여러 번이면 마지막 값을 채택)
-  const map = new Map<string, string>();
-  for (const rec of all) map.set(rec.key, rec.tracking);
-
-  return { map, records: all, skipped };
+  return { map, orderFileMap };
 };
