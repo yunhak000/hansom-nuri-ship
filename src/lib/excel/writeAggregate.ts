@@ -92,7 +92,7 @@ export const downloadAggregateExcel = async (aggregateRows: TAggregateRow[]) => 
     });
   });
 
-  // 헤더 스타일
+  // 헤더 스타일 추가
   worksheet.getRow(1).font = { bold: true };
 
   // AutoFilter (정렬/필터 가능)
