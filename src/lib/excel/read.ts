@@ -1,8 +1,10 @@
 import ExcelJS from "exceljs";
 
+export type TExcelRow = Record<string, unknown>;
+
 export type TReadExcelResult = {
   headers: string[];
-  rows: Array<Record<string, any>>;
+  rows: TExcelRow[];
 };
 
 export const readExcelFile = async (file: File): Promise<TReadExcelResult> => {
@@ -16,18 +18,21 @@ export const readExcelFile = async (file: File): Promise<TReadExcelResult> => {
   }
 
   const headers: string[] = [];
+
   worksheet.getRow(1).eachCell((cell, colNumber) => {
     headers[colNumber - 1] = String(cell.value ?? "").trim();
   });
 
-  const rows: Array<Record<string, any>> = [];
+  const rows: TExcelRow[] = [];
 
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
 
-    const rowData: Record<string, any> = {};
+    const rowData: TExcelRow = {};
+
     headers.forEach((header, index) => {
-      rowData[header] = row.getCell(index + 1).value ?? "";
+      const cellValue = row.getCell(index + 1).value;
+      rowData[header] = cellValue ?? "";
     });
 
     rows.push(rowData);

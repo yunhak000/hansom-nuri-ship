@@ -13,6 +13,18 @@ export type TReadReplyResult = {
   skipped: Array<{ reason: string; sourceFileName: string }>;
 };
 
+const buildHeaderIndexMap = (ws: ExcelJS.Worksheet) => {
+  const headerMap = new Map<string, number>(); // normalized header -> colIndex(1-based)
+
+  ws.getRow(1).eachCell((cell, colNumber) => {
+    const h = String(cell.value ?? "").trim();
+    if (!h) return;
+    headerMap.set(normalizeHeader(h), colNumber);
+  });
+
+  return headerMap;
+};
+
 export const readCjReplyFile = async (
   file: File,
 ): Promise<TReadReplyResult> => {
@@ -21,17 +33,11 @@ export const readCjReplyFile = async (
   await wb.xlsx.load(buffer);
 
   const ws = wb.worksheets[0];
-  if (!ws) throw new Error(`회신 파일 시트를 찾을 수 없습니다: ${file.name}`);
+  if (!ws) {
+    throw new Error(`회신 파일 시트를 찾을 수 없습니다: ${file.name}`);
+  }
 
-  // 헤더 찾기
-  const headers: string[] = [];
-  ws.getRow(1).eachCell((cell, colNumber) => {
-    headers[colNumber - 1] = String(cell.value ?? "").trim();
-  });
-
-  const headerMap = new Map<string, number>(); // normalized header -> col index (1-based)
-  headers.forEach((h, idx) => headerMap.set(normalizeHeader(h), idx + 1));
-
+  const headerMap = buildHeaderIndexMap(ws);
   const keyCol = headerMap.get(normalizeHeader(CJ_REPLY_KEY_COL));
   const trackingCol = headerMap.get(normalizeHeader(CJ_REPLY_TRACKING_COL));
 
@@ -40,7 +46,7 @@ export const readCjReplyFile = async (
       records: [],
       skipped: [
         {
-          reason: "필수 컬럼(고객주문번호/운송장번호)을 찾지 못함",
+          reason: `필수 컬럼을 찾지 못함: ${CJ_REPLY_KEY_COL} / ${CJ_REPLY_TRACKING_COL}`,
           sourceFileName: file.name,
         },
       ],
@@ -64,7 +70,6 @@ export const readCjReplyFile = async (
       return;
     }
     if (!tracking) {
-      // 너가 "항상 채워져 있다" 했지만, 방어로직은 유지
       skipped.push({
         reason: `운송장번호 비어있음 (고객주문번호=${key})`,
         sourceFileName: file.name,
@@ -78,32 +83,65 @@ export const readCjReplyFile = async (
   return { records, skipped };
 };
 
-export const readCjReplyFiles = async (files: File[]) => {
-  const map = new Map<string, string>();
+export type TReadReplyFilesResult = {
+  map: Map<string, string[]>; // 고객주문번호 -> 운송장번호들
+  orderFileMap: Map<string, Set<string>>; // 고객주문번호 -> 등장한 파일명 set
+  skipped: Array<{ reason: string; sourceFileName: string }>;
+};
+
+export const readCjReplyFiles = async (
+  files: File[],
+): Promise<TReadReplyFilesResult> => {
+  const map = new Map<string, string[]>();
   const orderFileMap = new Map<string, Set<string>>();
+  const skipped: Array<{ reason: string; sourceFileName: string }> = [];
 
   for (const file of files) {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(await file.arrayBuffer());
-    const sheet = workbook.worksheets[0];
+    const buffer = await file.arrayBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
 
-    sheet.eachRow((row, rowIdx) => {
-      if (rowIdx === 1) return;
+    const ws = wb.worksheets[0];
+    if (!ws) {
+      skipped.push({
+        reason: "시트를 찾을 수 없음",
+        sourceFileName: file.name,
+      });
+      continue;
+    }
 
-      const orderNo = String(row.getCell("고객주문번호").value ?? "").trim();
-      const tracking = String(row.getCell("운송장번호").value ?? "").trim();
-      if (!orderNo || !tracking) return;
+    const headerMap = buildHeaderIndexMap(ws);
+    const keyCol = headerMap.get(normalizeHeader(CJ_REPLY_KEY_COL));
+    const trackingCol = headerMap.get(normalizeHeader(CJ_REPLY_TRACKING_COL));
 
-      // ✅ 운송장 매핑 (기존 로직)
-      map.set(orderNo, tracking);
+    if (!keyCol || !trackingCol) {
+      skipped.push({
+        reason: `필수 컬럼을 찾지 못함: ${CJ_REPLY_KEY_COL} / ${CJ_REPLY_TRACKING_COL}`,
+        sourceFileName: file.name,
+      });
+      continue;
+    }
 
-      // ✅ 파일별 주문번호 추적
-      if (!orderFileMap.has(orderNo)) {
-        orderFileMap.set(orderNo, new Set());
-      }
-      orderFileMap.get(orderNo)!.add(file.name);
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+
+      const orderNo = toText(row.getCell(keyCol).value).trim();
+      const tracking = toText(row.getCell(trackingCol).value).trim();
+
+      if (!orderNo) return;
+      if (!tracking) return;
+
+      // ✅ 운송장 누적 (같은 파일 내 중복 주문번호는 정상)
+      const list = map.get(orderNo) ?? [];
+      list.push(tracking);
+      map.set(orderNo, list);
+
+      // ✅ 파일별 주문번호 추적 (서로 다른 파일 중복 검사용)
+      const fileSet = orderFileMap.get(orderNo) ?? new Set<string>();
+      fileSet.add(file.name);
+      orderFileMap.set(orderNo, fileSet);
     });
   }
 
-  return { map, orderFileMap };
+  return { map, orderFileMap, skipped };
 };

@@ -1,19 +1,32 @@
 import Dexie, { type Table } from "dexie";
 
-export type TOriginalRow = Record<string, any>;
+export type TOriginalRow = Record<string, unknown>;
+
+export type TAggregateRowCache = {
+  itemName: string;
+  totalBox: number;
+  kg?: number | null;
+};
+
+export type TUploadedReplyFile = {
+  name: string;
+  size: number;
+  lastModified: number;
+};
 
 export type TJobState = {
   createdAt: string; // ISO
   originalFileName: string;
+
   // 원본 전체 row를 저장 (새로고침 대비)
   originalRows: TOriginalRow[];
   originalHeaders: string[];
 
   // “품목명 단순 집계” 결과를 캐시(선택)
-  aggregateRows?: Array<{ itemName: string; totalBox: number; kg?: number | null }>;
+  aggregateRows?: TAggregateRowCache[];
 
   // 회신 업로드 중복 방지용
-  uploadedReplyFiles?: Array<{ name: string; size: number; lastModified: number }>;
+  uploadedReplyFiles?: TUploadedReplyFile[];
 };
 
 class HansomDB extends Dexie {

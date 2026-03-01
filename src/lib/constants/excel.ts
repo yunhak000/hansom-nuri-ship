@@ -25,3 +25,5 @@ export const ORIGINAL_TRACKING_COL = "운송장번호";
 
 export const CJ_REPLY_KEY_COL = "고객주문번호";
 export const CJ_REPLY_TRACKING_COL = "운송장번호";
+
+export const ORIGINAL_FALLBACK_KEY_COL = "★쇼핑몰 주문번호★";

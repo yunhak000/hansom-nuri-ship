@@ -1,8 +1,10 @@
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { ORIGINAL_ITEM_COL, ORIGINAL_BOX_COL } from "@/lib/constants/excel";
-import { extractKg, sortByKgThenName } from "@/lib/utils/sort";
+import { extractKg } from "@/lib/utils/sort";
 import { makeDatedFileName } from "@/lib/utils/filename";
+
+type TRow = Record<string, unknown>;
 
 export type TAggregateRow = {
   itemName: string;
@@ -11,13 +13,23 @@ export type TAggregateRow = {
   fruitKey: string;
 };
 
-const FRUIT_KEYWORDS = ["천혜향", "한라봉", "레드향", "감귤", "황금향", "카라향", "청견", "세토카", "데코폰"];
+const FRUIT_KEYWORDS = [
+  "천혜향",
+  "한라봉",
+  "레드향",
+  "감귤",
+  "황금향",
+  "카라향",
+  "청견",
+  "세토카",
+  "데코폰",
+];
 
 const extractFruitKey = (itemName: string) => {
   for (const k of FRUIT_KEYWORDS) {
     if (itemName.includes(k)) return k;
   }
-  // 못 찾으면 일단 첫 단어로 fallback (데이터 늘어나면 키워드만 보강하면 됨)
+  // 못 찾으면 일단 첫 단어로 fallback
   return itemName.split(/\s+/)[0] ?? itemName;
 };
 
@@ -31,7 +43,7 @@ const normalizeItemNameForAggregate = (itemName: string) => {
   );
 };
 
-export const buildAggregateRows = (originalRows: Array<Record<string, any>>): TAggregateRow[] => {
+export const buildAggregateRows = (originalRows: TRow[]): TAggregateRow[] => {
   const map = new Map<string, number>();
 
   for (const row of originalRows) {
@@ -41,7 +53,10 @@ export const buildAggregateRows = (originalRows: Array<Record<string, any>>): TA
     const rawBox = row[ORIGINAL_BOX_COL];
     const box = Number(rawBox ?? 0);
 
-    map.set(itemName, (map.get(itemName) ?? 0) + (Number.isFinite(box) ? box : 0));
+    map.set(
+      itemName,
+      (map.get(itemName) ?? 0) + (Number.isFinite(box) ? box : 0),
+    );
   }
 
   const normalizeKgForAggregate = (kg: number | null): number | null => {
@@ -51,17 +66,20 @@ export const buildAggregateRows = (originalRows: Array<Record<string, any>>): TA
     return kg;
   };
 
-  const result: TAggregateRow[] = Array.from(map.entries()).map(([itemName, totalBox]) => {
-    const rawKg = extractKg(itemName);
+  const result: TAggregateRow[] = Array.from(map.entries()).map(
+    ([itemName, totalBox]) => {
+      const rawKg = extractKg(itemName);
 
-    return {
-      itemName,
-      totalBox,
-      kg: normalizeKgForAggregate(rawKg),
-      fruitKey: extractFruitKey(itemName),
-    };
-  });
+      return {
+        itemName,
+        totalBox,
+        kg: normalizeKgForAggregate(rawKg),
+        fruitKey: extractFruitKey(itemName),
+      };
+    },
+  );
 
+  // ✅ 품목(과일키) → kg 오름차순 → 품목명
   result.sort((a, b) => {
     const fk = a.fruitKey.localeCompare(b.fruitKey, "ko");
     if (fk !== 0) return fk;
@@ -76,7 +94,9 @@ export const buildAggregateRows = (originalRows: Array<Record<string, any>>): TA
   return result;
 };
 
-export const downloadAggregateExcel = async (aggregateRows: TAggregateRow[]) => {
+export const downloadAggregateExcel = async (
+  aggregateRows: TAggregateRow[],
+) => {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("품목별 집계");
 
@@ -92,10 +112,10 @@ export const downloadAggregateExcel = async (aggregateRows: TAggregateRow[]) => 
     });
   });
 
-  // 헤더 스타일
   worksheet.getRow(1).font = { bold: true };
 
-  // AutoFilter (정렬/필터 가능)
+  // 🔧 너가 “필터 기능 없애겠다”고 했으면 아래 autoFilter 줄은 지워도 됨.
+  // 남겨도 any랑은 무관하고 동작만(엑셀 필터) 달라져.
   worksheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: aggregateRows.length + 1, column: 2 },
