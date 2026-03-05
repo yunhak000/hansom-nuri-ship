@@ -116,15 +116,23 @@ export const applyTracking = (
   }
 
   // ✅ 매핑 적용
+  // - 1) 회신에는 있지만 원본에 없는 주문번호 → unmatched (회신 기준)
+  // - 2) 원본에는 있지만 회신에 없는 주문번호 → unmatched (원본 기준)
+  const originalKeys = new Set(index.keys());
+
   for (const [customerOrderNo, trackingList] of replyMap.entries()) {
     const idxs = index.get(customerOrderNo);
 
     if (!idxs || idxs.length === 0) {
-      // 회신에 운송장이 여러 개면 모두 unmatched로 기록
-      for (const t of trackingList)
+      // 회신에 운송장이 여러 개면 모두 unmatched로 기록 (원본에 없는 주문번호)
+      for (const t of trackingList) {
         unmatched.push({ customerOrderNo, tracking: t });
+      }
       continue;
     }
+
+    // replyMap에 등장한 키는 "원본에도 회신도 있는 키"로 간주
+    originalKeys.delete(customerOrderNo);
 
     for (const idx of idxs) {
       // 1번째는 base 컬럼
@@ -142,6 +150,11 @@ export const applyTracking = (
         if (!(h in updated[idx])) updated[idx][h] = "";
       }
     }
+  }
+
+  // ✅ 원본에는 있지만 회신에 없는 주문번호를 unmatched에 추가
+  for (const key of originalKeys) {
+    unmatched.push({ customerOrderNo: key, tracking: "" });
   }
 
   // ✅ 모든 row에 tracking 컬럼 빈값 보장

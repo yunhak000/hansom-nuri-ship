@@ -331,7 +331,8 @@ export default function HomePage() {
             messageLines.join("\n"),
         );
 
-        // ✅ 업로드를 막되, 파일선택 상태는 사용자 편의를 위해 유지 (원하면 여기서 input.value=""로 비울 수도 있음)
+        // ✅ 업로드를 막되, 파일선택 상태는 유지하되 로딩 상태는 반드시 해제
+        setBusy(false);
         return;
       }
 
@@ -349,10 +350,14 @@ export default function HomePage() {
       await saveJob(next);
       setJob(next);
 
+      const unmatchedKeys = new Set(
+        unmatched.map((u) => u.customerOrderNo),
+      );
+
       setLocalResult({
         unmatched,
         duplicates,
-        matchedCount: map.size - unmatched.length,
+        matchedCount: map.size - unmatchedKeys.size,
         totalReplyCount: map.size,
       });
 
