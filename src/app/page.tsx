@@ -381,6 +381,7 @@ export default function HomePage() {
       await downloadOriginalWithTracking(
         job.originalHeaders,
         job.originalRows as TRow[],
+        job.originalFileName,
       );
     } catch (e: unknown) {
       setError(getErrorMessage(e) || "최종 엑셀 생성 중 오류가 발생했습니다.");

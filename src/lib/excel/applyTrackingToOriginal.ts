@@ -169,9 +169,51 @@ export const applyTracking = (
   return { updatedHeaders, updatedRows: updated, unmatched, duplicates };
 };
 
+const isTrackingCol = (header: string) => {
+  const n = normalizeHeader(header);
+  return (
+    n.startsWith(normalizeHeader("운송장번호")) ||
+    n.startsWith(normalizeHeader("송장번호"))
+  );
+};
+
+const countNonEmptyTrackingCells = (headers: string[], rows: TRow[]) => {
+  const trackingHeaders = headers.filter(isTrackingCol);
+  let n = 0;
+  for (const row of rows) {
+    for (const h of trackingHeaders) {
+      if (String(toText(row[h] ?? "")).trim() !== "") n += 1;
+    }
+  }
+  return n;
+};
+
+const stripXlsx = (name: string) => name.replace(/\.xlsx$/i, "").trim();
+
+const sanitizeDownloadBaseName = (name: string) => {
+  const cleaned = String(name ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  const safe = cleaned.length > 200 ? cleaned.slice(0, 200).trim() : cleaned;
+  return safe || "한섬누리";
+};
+
+const makeFinalOriginalFileName = (
+  originalFileName: string,
+  headers: string[],
+  rows: TRow[],
+) => {
+  const base = sanitizeDownloadBaseName(stripXlsx(originalFileName));
+  const count = countNonEmptyTrackingCells(headers, rows);
+  return `${base}_운송장번호_반영완료_${count}건.xlsx`;
+};
+
 export const downloadOriginalWithTracking = async (
   headers: string[],
   rows: TRow[],
+  originalFileName: string,
 ) => {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Sheet1");
@@ -248,10 +290,8 @@ export const downloadOriginalWithTracking = async (
   // ✅ 필터 기능 제거(요청사항 유지)
 
   const buf = await wb.xlsx.writeBuffer();
-  saveAs(
-    new Blob([buf]),
-    makeDatedFileName("한섬누리_운송장번호_반영완료.xlsx"),
-  );
+  const outName = makeFinalOriginalFileName(originalFileName, headers, rows);
+  saveAs(new Blob([buf]), outName);
 };
 
 export const downloadUnmatchedExcel = async (
